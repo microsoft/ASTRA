@@ -1,14 +1,35 @@
-# Project
+# Self-Training with Weak Supervision
 
-> This repo has been populated by an initial template to help get you started. Please
-> make sure to update the content to build a great experience for community-building.
+This repo holds the code for our NAACL 2021 paper: "[Self-Training with Weak Supervision](https://www.microsoft.com/en-us/research/publication/leaving-no-valuable-knowledge-behind-weak-supervision-with-self-training-and-domain-specific-rules/)"
 
-As the maintainer of this project, please make a few updates:
+# Installation
 
-- Improving this README.MD file to provide a great experience
-- Updating SUPPORT.MD with content about this project's support experience
-- Understanding the security reporting process in SECURITY.MD
-- Remove this section from the README
+## Install Requirements (in a Python 3.6 environment)
+```
+pip install -r requirements.txt
+```
+
+## OR Install conda environment 
+``` 
+conda env create -f env/environment.yml
+```
+
+## Download Data
+```
+cd data
+bash download_data.sh
+```
+
+# ASTRA Framework
+
+## Run ASTRA
+```
+cd astra
+python main.py --dataset youtube --datapath ../data 
+```
+
+Supported classifiers: logreg (Logistic Regression), berttf (Bert-based classifier), elmo (ELMO-based classifier)
+Supported datasets (lowercase): TREC, SMS, YOUTUBE, CENSUS, MITR, SPOUSE
 
 ## Contributing
 
