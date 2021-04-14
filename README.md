@@ -35,6 +35,20 @@ Supported <TEACHER_MODEL> arguments:
 
 We will soon add instructions for supporting custom student and teacher components. 
 
+## Citation 
+
+```
+@InProceedings{karamanolakis2021self-training,
+author = {Karamanolakis, Giannis and Mukherjee, Subhabrata (Subho) and Zheng, Guoqing and Awadallah, Ahmed H.},
+title = {Self-training with Weak Supervision},
+booktitle = {NAACL 2021},
+year = {2021},
+month = {May},
+publisher = {NAACL 2021},
+url = {https://www.microsoft.com/en-us/research/publication/self-training-weak-supervision-astra/},
+}
+```
+
 ## Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
