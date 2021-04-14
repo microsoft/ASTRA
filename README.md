@@ -1,35 +1,39 @@
 # Self-Training with Weak Supervision
 
-This repo holds the code for our NAACL 2021 paper: "[Self-Training with Weak Supervision](https://www.microsoft.com/en-us/research/publication/leaving-no-valuable-knowledge-behind-weak-supervision-with-self-training-and-domain-specific-rules/)"
+This repo holds the code for our weak supervision framework, ASTRA, described in our NAACL 2021 paper: "[Self-Training with Weak Supervision](https://www.microsoft.com/en-us/research/publication/leaving-no-valuable-knowledge-behind-weak-supervision-with-self-training-and-domain-specific-rules/)"
 
-# Installation
 
-## Install Requirements (in a Python 3.6 environment)
+## Installation
+
+Install Requirements (Python 3.6):
 ```
 pip install -r requirements.txt
 ```
 
-## OR Install conda environment 
-``` 
-conda env create -f env/environment.yml
-```
-
 ## Download Data
-```
-cd data
-bash download_data.sh
-```
 
-# ASTRA Framework
+We will soon add detailed instructions for downloading datasets and domain-specific rules as well as supporting custom datasets. 
 
-## Run ASTRA
+
+## ASTRA Framework
+
+ASTRA leverages domain-specific rules, a large amount of unlabeled data, and a small amount of labeled data via iterative self-training.
+
+You can run ASTRA as: 
 ```
 cd astra
-python main.py --dataset youtube --datapath ../data 
+python main.py --dataset <DATASET> --student_name <STUDENT_MODEL> --teacher_name <TEACHER_MODEL>
 ```
 
-Supported classifiers: logreg (Logistic Regression), berttf (Bert-based classifier), elmo (ELMO-based classifier)
-Supported datasets (lowercase): TREC, SMS, YOUTUBE, CENSUS, MITR, SPOUSE
+Supported <STUDENT_MODEL> arguments: 
+1. **logreg**: Bag-of-words Logistic Regression classifier
+2. **elmo**: ELMO-based classifier
+3. **berttf**: BERT-based classifier
+
+Supported <TEACHER_MODEL> arguments: 
+1. **ran**: our Rule Attention Network (RAN)
+
+We will soon add instructions for supporting custom student and teacher components. 
 
 ## Contributing
 
