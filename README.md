@@ -5,7 +5,13 @@ This repo holds the code for our weak supervision framework, ASTRA, described in
 
 ## Installation
 
-Install Requirements (Python 3.6):
+First, create a conda environment running Python 3.6: 
+```
+conda create --name astra python=3.6
+conda activate astra
+```
+
+Then, install the required dependencies:
 ```
 pip install -r requirements.txt
 ```
@@ -28,7 +34,7 @@ python main.py --dataset <DATASET> --student_name <STUDENT_MODEL> --teacher_name
 Supported <STUDENT_MODEL> arguments: 
 1. **logreg**: Bag-of-words Logistic Regression classifier
 2. **elmo**: ELMO-based classifier
-3. **berttf**: BERT-based classifier
+3. **bert**: BERT-based classifier
 
 Supported <TEACHER_MODEL> arguments: 
 1. **ran**: our Rule Attention Network (RAN)
