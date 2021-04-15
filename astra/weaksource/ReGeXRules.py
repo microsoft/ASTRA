@@ -1,17 +1,13 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
 import numpy as np
-import multiprocessing as mp
-from functools import partial
-from tqdm import tqdm
-import pandas as pd
-import re
-import os
 
 # Weak Source Classes
-# Load rules from pre-processed files for efficiency. 
+# Here is the place to define heuristic rules (labeling functions)
+# Note: most rules are already provided in benchmarks as pre-processed files (for efficiency).
 
 class YoutubeRules:
     # Weak Source Class

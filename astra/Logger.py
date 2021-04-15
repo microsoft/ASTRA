@@ -1,5 +1,6 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
 import logging

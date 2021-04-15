@@ -1,16 +1,14 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
 import os
-from dataset import PreprocessedDataset
 from torch.utils.data import Dataset
-import pickle
+from dataset import PreprocessedDataset
 import numpy as np
 import pandas as pd
 import torch
-from itertools import chain
-from tqdm.auto import tqdm, trange
 from sklearn.model_selection import train_test_split
 from copy import deepcopy
 from sklearn.utils import shuffle
@@ -24,7 +22,34 @@ def get_dataset_obj(dataset):
         raise(BaseException('dataset not supported: {}'.format(dataset)))
 
 
+class DataHandler:
+    # This module is responsible for feeding the data to teacher/student
+    # If teacher is applied, then student gets the teacher-labeled data instead of ground-truth labels
+    def __init__(self, args, logger=None, student_preprocess=None, teacher_preprocess=None):
+        self.args = args
+        self.dataset = args.dataset
+        self.logger = logger
+        self.student_preprocess = student_preprocess
+        self.teacher_preprocess = teacher_preprocess
+        self.datasets = {}
+        self.seed = args.seed
+        np.random.seed(self.seed)
+
+    def load_dataset(self, method='train'):
+        dataset = WSDataset(self.args, method=method,
+                            student_preprocess=self.student_preprocess,
+                            teacher_preprocess=self.teacher_preprocess,
+                            logger=self.logger)
+        self.datasets[method] = dataset
+        return dataset
+
+    def create_pseudodataset(self, wsdataset):
+        dataset = PseudoDataset(self.args, wsdataset, self.logger)
+        return dataset
+
+
 class WSDataset(Dataset):
+    # WSDataset: Dataset for Weak Supervision.
     def __init__(self, args, method, logger=None, student_preprocess=None, teacher_preprocess=None):
         super(WSDataset, self).__init__()
         self.args = args
@@ -38,10 +63,8 @@ class WSDataset(Dataset):
         self.student_preprocess = student_preprocess
         self.teacher_preprocess = teacher_preprocess
         self.logger = logger
-        self.dtype = args.dataset_type
-        self.rule_perc = args.rule_perc
-        if self.dataset in preprocessed_dataset_list or self.dataset in preprocessed_dataset_list2:
-            self.dataset_obj = get_dataset_obj(args.dataset)(datapath=self.datapath, dataset=self.dataset, seed=self.seed, dtype=self.dtype, rule_perc=self.rule_perc)
+        if self.dataset in preprocessed_dataset_list:
+            self.dataset_obj = get_dataset_obj(args.dataset)(datapath=self.datapath, dataset=self.dataset, seed=self.seed)
         else:
             self.dataset_obj = get_dataset_obj(args.dataset)(datapath=self.datapath)
         num_labels = len(self.dataset_obj.label2ind)
@@ -125,10 +148,6 @@ class WSDataset(Dataset):
 
         return
 
-    def preprocess_sentiment_weak_labels(self):
-        # Apply Weak Sources only once and then just load their results. 
-        return
-
     def __len__(self):
         return len(self.data['texts'])
 
@@ -143,6 +162,7 @@ class WSDataset(Dataset):
 
 
 class PseudoDataset(Dataset):
+    # PseudoDataset: a Dataset class that provides extra functionalities for teacher-student training.
     def __init__(self, args, wsdataset, logger=None):
         super(PseudoDataset, self).__init__()
         self.args = args
@@ -162,7 +182,6 @@ class PseudoDataset(Dataset):
         self.logger.info("done")
         self.label2ind = wsdataset.label2ind
         self.ind2label = wsdataset.ind2label
-
 
     def keep(self, keep_indices, update=None):
         self.logger.info("Creating Pseudo Dataset with {} items...".format(len(keep_indices)))
@@ -322,29 +341,3 @@ class PseudoDataset(Dataset):
             'label': torch.tensor(self.data['labels'][item]) if 'labels' in self.data else None
         }
         return ret
-
-
-class DataHandler:
-    # This module is responsible for feeding the data to teacher/student
-    # If teacher is applied, then student gets the teacher-labeled data instead of ground-truth labels
-    def __init__(self, args, logger=None, student_preprocess=None, teacher_preprocess=None):
-        self.args = args
-        self.dataset = args.dataset
-        self.logger = logger
-        self.student_preprocess = student_preprocess
-        self.teacher_preprocess = teacher_preprocess
-        self.datasets = {}
-        self.seed = args.seed
-        np.random.seed(self.seed)
-
-    def load_dataset(self, method='train'):
-        dataset = WSDataset(self.args, method=method,
-                            student_preprocess=self.student_preprocess,
-                            teacher_preprocess=self.teacher_preprocess,
-                            logger=self.logger)
-        self.datasets[method] = dataset
-        return dataset
-
-    def create_pseudodataset(self, wsdataset):
-        dataset = PseudoDataset(self.args, wsdataset, self.logger)
-        return dataset

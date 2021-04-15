@@ -1,72 +1,24 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
-import os
-import sys
-import re
 import math
 import random
-import logging
 import numpy as np
-from collections import defaultdict
 from numpy.random import seed
-from tensorflow.keras.preprocessing import sequence
-from string import punctuation
-from tensorflow.python.client import device_lib
-from tqdm import tqdm
-from tensorflow.keras import backend as kb
-from tensorflow.keras import optimizers
-from tensorflow.keras.models import load_model
-import tensorflow.keras as K
 import tensorflow as tf
-from sklearn.utils import shuffle
-from tensorflow.keras.utils import multi_gpu_model, to_categorical
-from tensorflow.keras.losses import CategoricalCrossentropy, MeanSquaredError, Loss
-from bert import bert_tokenization
-from scipy.special import softmax
-import time
-import random
-from tensorflow.keras.initializers import RandomUniform
-from tensorflow.keras.layers import Embedding, Input, LSTM, Bidirectional, TimeDistributed, Dropout, Dense, Conv1D, \
-    Lambda, Concatenate, \
-    RepeatVector, Activation, Flatten, Permute, Add, concatenate, MaxPooling1D, GlobalMaxPooling1D, Multiply
-from numpy.random import seed
-from tensorflow.keras.regularizers import l1, l2
-from tensorflow.keras.utils import multi_gpu_model
-import os
-from transformers import BertTokenizer, TFBertModel, BertConfig
-from snorkel.labeling.model import MajorityLabelVoter
-import tensorflow_hub as hub
+import tensorflow.keras as K
+from tensorflow.keras.layers import Embedding, Input, Dropout, Dense, Lambda
 
-
-def MinEntropyLoss(batch_size):
-    def loss(y_true, y_prob):
-        per_example_loss = -y_prob * tf.math.log(y_prob)  
-        return tf.nn.compute_average_loss(per_example_loss, global_batch_size=batch_size)
-    return loss
-
-
-def SSLLoss(batch_size, num_labels):
-    def loss(y_true, y_prob):
-
-        y_true_sup = y_true * tf.keras.backend.cast(y_true != -1, 'float32')
-        y_true_unsup = y_true * tf.keras.backend.cast(y_true == -1, 'float32')
-        y_true_sup = y_true * (y_true != -1)
-        per_example_loss = -y_prob * tf.math.log(y_prob)  
-        return tf.nn.compute_average_loss(per_example_loss, global_batch_size=batch_size)
-    return loss
-
-
-def to_one_hot(x, num_classes):
-    targets = np.array([x]).reshape(-1)
-    return np.eye(num_classes)[targets]
 
 class RAN:
-    # Rule Attention Network
-    # input: text embedding x, array of rule predictions
-    # output: aggregate label
-    # latent variable: Bernouli variable
+    """
+    Rule Attention Network
+      * Input: text embedding x, array of rule predictions
+      * Output: aggregate label
+    """
+
     def __init__(self, args, num_rules, logger=None, name='ran'):
         self.args = args
         self.name = name
@@ -76,35 +28,33 @@ class RAN:
         self.datapath = args.datapath
         self.model_dir = args.logdir
         self.sup_batch_size = args.train_batch_size
-        if args.dataset == 'mitr':
-            self.unsup_batch_size = 128
-        else:
-            self.unsup_batch_size = 256
+        self.unsup_batch_size = args.unsup_batch_size
         self.sup_epochs = args.num_epochs
         self.unsup_epochs = args.num_unsup_epochs
         self.num_labels = args.num_labels
-        self.use_student_as_rule = args.use_student_as_rule
-        self.num_rules = num_rules 
-        self.max_rule_seq_length = min(self.num_rules, 10)
-        if args.dataset == 'census':
-            self.max_rule_seq_length = min(self.num_rules, 15)
-        if self.use_student_as_rule:
-            self.num_rules += 1
-            self.max_rule_seq_length += 1
-            self.student_rule_id = self.num_rules
+        self.num_rules = num_rules
+        # max_rule_seq_length: used for efficiency (Note: no rules are discarded.)
+        self.max_rule_seq_length = min(self.num_rules, args.max_rule_seq_length)
+
+        # Using Student as an extra rule
+        self.num_rules += 1
+        self.max_rule_seq_length += 1
+        self.student_rule_id = self.num_rules
         self.hard_student_rule = args.hard_student_rule
         self.preprocess = None
         self.trained = False
         self.xdim = -1
         self.ignore_student = False
-        self.train_type = 'ssl' 
+        self.gpus = 1
         
     def init(self, rule_pred):
-        self.majority_model = MajorityLabelVoter(cardinality=self.num_labels)
+        # Initialize RAN as majority voting (all sources have equal weights)
+        self.majority_model = MajorityVoter(num_labels=self.num_labels)
         return
 
     def postprocess_rule_preds(self, rule_pred, student_pred=None):
         """
+        Converts rule predictions to appropriate format
         :param rule_pred: a 2D array of rule preds: num_examples x num_rules
         :return:
             rule_one_hot: a 2D mask matrix: 1 if rule applies otherwise 0
@@ -112,11 +62,7 @@ class RAN:
                           # if a rule predicts -1, then pred = [0,...,0]
             student_pred: the soft predictions of a student network
         """
-
-        max_rule_seq_length = self.max_rule_seq_length
-        if self.use_student_as_rule:
-            max_rule_seq_length = max_rule_seq_length - 1
-
+        max_rule_seq_length = self.max_rule_seq_length - 1  # -1: Using student as extra rule
         N = rule_pred.shape[0]
         rule_mask = (rule_pred != -1).astype(int)
         fired_rule_ids = [(np.nonzero(x)[0] + 1).tolist() for x in rule_mask]
@@ -151,10 +97,9 @@ class RAN:
 
         return rule_mask, fired_rule_ids, one_hot_rule_pred
 
-    def train(self, x_train, rule_pred_train, y_train, x_dev=None, rule_pred_dev=None, y_dev=None, eval_fn=None,
+    def train(self, x_train, rule_pred_train, y_train, x_dev=None, rule_pred_dev=None, y_dev=None,
               student_pred_train=None, student_pred_dev=None,
-              x_unsup=None, rule_pred_unsup=None, student_pred_unsup=None,
-              exemplar_labels=None):
+              x_unsup=None, rule_pred_unsup=None, student_pred_unsup=None):
         
         assert x_unsup is not None, "For SSL RAN you need to also provide unlabeled data... "
         
@@ -178,8 +123,7 @@ class RAN:
         rule_one_hot_unsup, fired_rule_ids_unsup, rule_pred_unsup = self.postprocess_rule_preds(rule_pred_unsup, student_pred_unsup)
         self.logger.info("X Unsup Shape " + str(x_unsup.shape) + ' ' + str(rule_pred_unsup.shape))
 
-        gpus=1
-        self.gpus=gpus
+
         if not self.trained or (x_train is not None and self.xdim != x_train.shape[1]):
             if self.trained and self.xdim != x_train.shape[1]:
                 self.logger.info("WARNING: Changing dimensionality of x from {} to {}".format(self.xdim, x_train.shape[1]))
@@ -190,8 +134,8 @@ class RAN:
                                                 max_rule_seq_length=self.max_rule_seq_length,
                                                 seed=self.manual_seed)
         
-        self.logger.info("\n\n\t\t*** Training SSL RAN ***")
-        loss_fn = MinEntropyLoss(batch_size=self.unsup_batch_size * gpus)  # SSLLoss()
+        self.logger.info("\n\n\t\t*** Training RAN ***")
+        loss_fn = MinEntropyLoss(batch_size=self.unsup_batch_size * self.gpus)  # SSLLoss()
         self.model.compile(optimizer=tf.keras.optimizers.Adam(),
                            loss=loss_fn,
                            metrics=[tf.keras.metrics.SparseCategoricalAccuracy(name="acc")])
@@ -199,7 +143,7 @@ class RAN:
         self.model.fit(
             x=[x_unsup, fired_rule_ids_unsup, rule_pred_unsup],
             y=np.array([-1] * x_unsup.shape[0]),
-            batch_size=self.unsup_batch_size * gpus,
+            batch_size=self.unsup_batch_size * self.gpus,
             shuffle=True,
             epochs=self.sup_epochs,
             callbacks=[
@@ -217,7 +161,7 @@ class RAN:
         self.model.fit(
             x=[x_train, fired_rule_ids_train, rule_pred_train], 
             y=y_train,
-            batch_size=self.sup_batch_size * gpus,
+            batch_size=self.sup_batch_size * self.gpus,
             shuffle=True,
             epochs=self.sup_epochs,
             callbacks=[
@@ -294,47 +238,6 @@ class RAN:
         return
 
 
-def create_learning_rate_scheduler(max_learn_rate=5e-5,
-                                   end_learn_rate=1e-7,
-                                   warmup_epoch_count=10,
-                                   total_epoch_count=90):
-    def lr_scheduler(epoch):
-        if epoch < warmup_epoch_count:
-            res = (max_learn_rate / warmup_epoch_count) * (epoch + 1)
-        else:
-            res = max_learn_rate * math.exp(
-                math.log(end_learn_rate / max_learn_rate) * (epoch - warmup_epoch_count + 1) / (
-                        total_epoch_count - warmup_epoch_count + 1))
-        return float(res)
-
-    learning_rate_scheduler = tf.keras.callbacks.LearningRateScheduler(lr_scheduler, verbose=1)
-
-    return learning_rate_scheduler
-
-
-def l1_normalize(x, num_labels):
-    x = x + 1e-05  # avoid stability issues
-    l1_norm = tf.keras.backend.stop_gradient(tf.keras.backend.sum(x, axis=-1))
-    l1_norm = tf.keras.backend.repeat_elements(tf.keras.backend.expand_dims(l1_norm), num_labels, axis=-1)
-    return x / l1_norm
-
-
-def normalize_with_random_rule(output, att_sigmoid_proba, rule_preds_onehot):
-    num_labels = rule_preds_onehot.shape[-1]
-    sum_prob = tf.keras.backend.stop_gradient(tf.keras.backend.sum(rule_preds_onehot, axis=-1))
-    rule_mask = tf.keras.backend.cast(sum_prob > 0, 'float32')
-    num_rules = tf.keras.backend.cast(tf.keras.backend.sum(sum_prob, axis=-1), 'float32')
-    masked_att_proba = att_sigmoid_proba * rule_mask
-    sum_masked_att_proba = tf.keras.backend.sum(masked_att_proba, axis=-1)
-    uniform_rule_att_proba = num_rules - sum_masked_att_proba
-    uniform_vec = tf.ones((tf.shape(uniform_rule_att_proba)[0], num_labels)) / num_labels
-    uniform_pred = tf.math.multiply(
-        tf.keras.backend.repeat_elements(tf.keras.backend.expand_dims(uniform_rule_att_proba), num_labels, axis=-1),
-        uniform_vec)
-    output_with_uniform_rule = output+uniform_pred
-    return output_with_uniform_rule
-
-
 def construct_rule_network(student_emb_dim, num_rules, num_labels, dense_dropout=0.3, max_rule_seq_length=10, seed=42):
     # Rule Attention Network
     # encoder = TFBertModel.from_pretrained(model_type)
@@ -374,3 +277,96 @@ def construct_rule_network(student_emb_dim, num_rules, num_labels, dense_dropout
     model = tf.keras.Model(inputs=[student_embeddings, rule_ids, rule_preds_onehot], outputs=outputs)
     print(model.summary())
     return model
+
+
+def MinEntropyLoss(batch_size):
+    def loss(y_true, y_prob):
+        per_example_loss = -y_prob * tf.math.log(y_prob)
+        return tf.nn.compute_average_loss(per_example_loss, global_batch_size=batch_size)
+    return loss
+
+
+class MajorityVoter:
+    """
+    Predicts probabilities using the majority vote of the weak sources
+    Code adapted from the Snorkel source:
+    https://github.com/snorkel-team/snorkel/blob/b3b0669f716a7b3ed6cd573b57f3f8e12bcd495a/snorkel/labeling/model/baselines.py
+    """
+    def __init__(self, num_labels):
+        self.num_labels = num_labels
+
+    def predict(self, rule_pred):
+        Y_probs = self.predict_proba(rule_pred)
+        Y_p = self.probs_to_preds(Y_probs)
+        return Y_p
+
+    def predict_proba(self, rule_pred):
+        n, m = rule_pred.shape
+        pred = np.zeros((n, self.num_labels))
+        for i in range(n):
+            counts = np.zeros(self.num_labels)
+            for j in range(m):
+                if rule_pred[i, j] != -1:
+                    counts[rule_pred[i, j]] += 1
+            pred[i, :] = np.where(counts == max(counts), 1, 0)
+        pred /= pred.sum(axis=1).reshape(-1, 1)
+        return pred
+
+    def probs_to_preds(self, probs):
+        num_datapoints, num_classes = probs.shape
+        Y_pred = np.empty(num_datapoints)
+        diffs = np.abs(probs - probs.max(axis=1).reshape(-1, 1))
+
+        for i in range(num_datapoints):
+            max_idxs = np.where(diffs[i, :] < 1e-5)[0]
+            if len(max_idxs) == 1:
+                Y_pred[i] = max_idxs[0]
+            else:
+                Y_pred[i] = -1
+        return Y_pred.astype(np.int)
+
+
+def to_one_hot(x, num_classes):
+    targets = np.array([x]).reshape(-1)
+    return np.eye(num_classes)[targets]
+
+
+def create_learning_rate_scheduler(max_learn_rate=5e-5,
+                                   end_learn_rate=1e-7,
+                                   warmup_epoch_count=10,
+                                   total_epoch_count=90):
+    def lr_scheduler(epoch):
+        if epoch < warmup_epoch_count:
+            res = (max_learn_rate / warmup_epoch_count) * (epoch + 1)
+        else:
+            res = max_learn_rate * math.exp(
+                math.log(end_learn_rate / max_learn_rate) * (epoch - warmup_epoch_count + 1) / (
+                        total_epoch_count - warmup_epoch_count + 1))
+        return float(res)
+
+    learning_rate_scheduler = tf.keras.callbacks.LearningRateScheduler(lr_scheduler, verbose=1)
+
+    return learning_rate_scheduler
+
+
+def l1_normalize(x, num_labels):
+    x = x + 1e-05  # avoid stability issues
+    l1_norm = tf.keras.backend.stop_gradient(tf.keras.backend.sum(x, axis=-1))
+    l1_norm = tf.keras.backend.repeat_elements(tf.keras.backend.expand_dims(l1_norm), num_labels, axis=-1)
+    return x / l1_norm
+
+
+def normalize_with_random_rule(output, att_sigmoid_proba, rule_preds_onehot):
+    num_labels = rule_preds_onehot.shape[-1]
+    sum_prob = tf.keras.backend.stop_gradient(tf.keras.backend.sum(rule_preds_onehot, axis=-1))
+    rule_mask = tf.keras.backend.cast(sum_prob > 0, 'float32')
+    num_rules = tf.keras.backend.cast(tf.keras.backend.sum(sum_prob, axis=-1), 'float32')
+    masked_att_proba = att_sigmoid_proba * rule_mask
+    sum_masked_att_proba = tf.keras.backend.sum(masked_att_proba, axis=-1)
+    uniform_rule_att_proba = num_rules - sum_masked_att_proba
+    uniform_vec = tf.ones((tf.shape(uniform_rule_att_proba)[0], num_labels)) / num_labels
+    uniform_pred = tf.math.multiply(
+        tf.keras.backend.repeat_elements(tf.keras.backend.expand_dims(uniform_rule_att_proba), num_labels, axis=-1),
+        uniform_vec)
+    output_with_uniform_rule = output+uniform_pred
+    return output_with_uniform_rule

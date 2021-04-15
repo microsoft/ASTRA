@@ -1,5 +1,6 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
 import argparse
@@ -14,9 +15,6 @@ from functools import partial
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.linear_model import LogisticRegression
 from Tokenizer import Tokenizer
-
-def identity_fn(doc):
-    return doc
 
 
 class LogRegTrainer:
@@ -118,4 +116,7 @@ class LogRegTrainer:
         self.vectorizer = joblib.load(os.path.join(savefolder, 'vectorizer.pkl'))
         self.model = joblib.load(os.path.join(savefolder, 'logreg.pkl'))
 
-        
+
+def identity_fn(doc):
+    return doc
+

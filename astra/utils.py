@@ -1,27 +1,15 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
-import argparse
+
 import json
-import logging
 import os
-import glob
-from os.path import expanduser
 import numpy as np
-import random
-import shutil
-import torch
 import joblib
-from Logger import get_logger, close
-from DataHandler import DataHandler
-from Student import Student
-from Teacher import Teacher
-from Evaluator import Evaluator
-from datetime import datetime
-import ust_sampler
-home = expanduser("~")
-from copy import deepcopy
 from collections import defaultdict
+
+# Help functions used in main.py
 
 
 def to_one_hot(x, num_classes):
@@ -36,6 +24,7 @@ def evaluate_ran(model, dataset, evaluator, comment="test"):
                              proba=pred_dict['proba'],
                              comment=comment)
     return res, pred_dict
+
 
 def evaluate(model, dataset, evaluator, comment="test"):
     pred_dict = model.predict(dataset=dataset)
@@ -89,7 +78,8 @@ def save_and_report_results(args, results, logger):
     logger.info('Saved report at {}'.format(txt_savepath))
     return
 
-def analyze_rule_attention_scores(res, logger, savefolder, name='test', verbose=True):
+
+def analyze_rule_attention_scores(res, logger, savefolder, name='test', verbose=False):
     if not 'att_scores' in res or res['att_scores'] is None:
         return
     preds = res['preds']
@@ -130,4 +120,3 @@ def analyze_rule_attention_scores(res, logger, savefolder, name='test', verbose=
     savefile = os.path.join(savefolder, 'rule2att_dict_{}.pkl'.format(name))
     joblib.dump(rule2att, savefile)
     return
-

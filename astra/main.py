@@ -1,5 +1,6 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
 import argparse
@@ -25,7 +26,7 @@ from utils import to_one_hot, evaluate_ran, analyze_rule_attention_scores, evalu
 home = expanduser("~")
 
 
-def wst(args, logger):
+def astra(args, logger):
     """
         Self-training with weak supervivsion
         Leverages labeled, unlabeled data and weak rules for training a neural network
@@ -70,7 +71,6 @@ def wst(args, logger):
         dev_dataset=dev_dataset,
         train_label_name='labels',
         dev_label_name='labels',
-        eval_fn=ev.evaluate
     )
     train_res_list.append(results['student_train'])
     student.save('supervised_student')
@@ -117,7 +117,7 @@ def wst(args, logger):
         teacher_dev_res_list.append(teacher_dev_res)
 
         teacher_test_res, t_test_dict = evaluate_ran(teacher, test_dataset, ev, "teacher test iter{}".format(iter))
-        analyze_rule_attention_scores(t_test_dict, logger, args.logdir, name='test_iter{}'.format(iter), verbose=True)
+        # analyze_rule_attention_scores(t_test_dict, logger, args.logdir, name='test_iter{}'.format(iter))
         teacher_test_res_list.append(teacher_test_res)
 
         # Update unlabeled data with Teacher's predictions
@@ -126,14 +126,11 @@ def wst(args, logger):
         pseudodataset.data['teacher_weights'] = np.max(teacher_pred_dict_unlabeled['proba'], axis=1)
         pseudodataset.drop(col='teacher_labels', value=-1)
 
-        if args.uniform_balance:
-            pseudodataset.balance('teacher_labels', proba='teacher_proba')
-        elif args.uniform_balance_maxsize:
-            pseudodataset.balance('teacher_labels', proba='teacher_proba', max_size=args.max_size)
-    
+        pseudodataset.balance('teacher_labels', proba='teacher_proba')
         pseudodataset.report_stats('teacher_labels')
 
         if len(set(teacher_pred_dict_unlabeled['preds'])) == 1:
+            # Teacher predicts a single class
             logger.info("Self-training led to trivial predictions. Stopping...")
             break
 
@@ -149,18 +146,15 @@ def wst(args, logger):
             train_label_name='teacher_proba' if args.soft_labels else 'teacher_labels',
             train_weight_name='teacher_weights' if args.loss_weights else None,
             dev_label_name='labels',
-            eval_fn=ev.evaluate
         )
 
-        if not args.nofinetune:
-            logger.info('fine-tuning the student on clean labeled data')
-            train_res = student.finetune(
-                train_dataset=newtraindataset,
-                dev_dataset=dev_dataset,
-                train_label_name='labels',
-                dev_label_name='labels',
-                eval_fn=ev.evaluate
-            )
+        logger.info('fine-tuning the student on clean labeled data')
+        train_res = student.finetune(
+            train_dataset=newtraindataset,
+            dev_dataset=dev_dataset,
+            train_label_name='labels',
+            dev_label_name='labels',
+        )
         train_res_list.append(train_res)
 
         # Evaluate student performance and update records
@@ -218,33 +212,36 @@ def wst(args, logger):
 
 def main():
     parser = argparse.ArgumentParser()
+
+    # Main Arguments
     parser.add_argument("--dataset", help="Dataset name", type=str, default='youtube')
-    parser.add_argument("--experiment_folder", help="Dataset name", type=str, default='../experiments/')
     parser.add_argument("--datapath", help="Path to base dataset folder", type=str, default='../data')
-    parser.add_argument("--dataset_type", help="Dataset type (original / train_valid_split", type=str, default='train_valid_split')
-    parser.add_argument("--rule_perc", default=1.0, type=float, help="Percentage of rules to keep")
+    parser.add_argument("--student_name", help="Student short name", type=str, default='bert')
+    parser.add_argument("--teacher_name", help="Student short name", type=str, default='ran')
+
+    # Extra Arguments
+    parser.add_argument("--experiment_folder", help="Dataset name", type=str, default='../experiments/')
     parser.add_argument("--logdir", help="Experiment log directory", type=str, default='./')
     parser.add_argument("--metric", help="Evaluation metric", type=str, default='acc')
-    parser.add_argument("--student_name", help="Student short name", type=str, default='berttf')
-    parser.add_argument("--teacher_name", help="Student short name", type=str, default='ran_ssl')
     parser.add_argument("--num_iter", help="Number of self/co-training iterations", type=int, default=25)
+    parser.add_argument("--num_supervised_trials", nargs="?", type=int, default=5, help="number of different trials to start self-training with")
     parser.add_argument('-ws', '--weak_sources', help="List of weak sources name for Teacher", nargs='+')
     parser.add_argument("--downsample", help="Downsample labeled train & dev datasets randomly stratisfied by label", type=float, default=1.0)
     parser.add_argument("--oversample", help="Oversample labeled train datasets", type=int, default=1)
     parser.add_argument("--tokenizer_method", help="Tokenizer method (for LogReg student)", type=str, default='clean')
     parser.add_argument("--num_epochs", default=70, type=int, help="Total number of training epochs for student.")
+    parser.add_argument("--num_unsup_epochs", default=25, type=int, help="Total number of training epochs for training student on unlabeled data")
     parser.add_argument("--debug", action="store_true", help="Activate debug mode")
-    parser.add_argument("--nofinetune", action="store_true", help="Do NOT Fine-tune Student on labeled data after each iteration")
     parser.add_argument("--soft_labels", action="store_true", help="Use soft labels for training Student")
+    parser.add_argument("--loss_weights", action="store_true", help="Use instance weights in loss function according to Teacher's confidence")
     parser.add_argument("--convert_abstain_to_random", action="store_true", help="In Teacher, if rules abstain on dev/test then flip a coin")
     parser.add_argument("--hard_student_rule", action="store_true", help="When using Student as a rule in Teacher, use hard (instead of soft) student labels")
-    parser.add_argument("--balance", action="store_true", help="balance selftraining predictions to retain clean label distribution")
-    parser.add_argument("--balance_maxsize", action="store_true", help="balance selftraining predictions to retain clean label distribution")
-    parser.add_argument("--uniform_balance", action="store_true", help="balance selftraining predictions to uniform")
-    parser.add_argument("--uniform_balance_maxsize", action="store_true", help="balance selftraining predictions to uniform and keep top 1000")
-    parser.add_argument("--train_batch_size", help="Train batch size", type=int, default=16) 
+    parser.add_argument("--train_batch_size", help="Train batch size", type=int, default=16)
     parser.add_argument("--eval_batch_size", help="Dev batch size", type=int, default=128)
+    parser.add_argument("--unsup_batch_size", help="Unsupervised batch size", type=int, default=128)
     parser.add_argument("--max_size", help="Max size of unlabeled data for training the student if balance_maxsize==True", type=int, default=1000)
+    parser.add_argument("--max_seq_length", help="Maximum sequence length (student)", type=int, default=64)
+    parser.add_argument("--max_rule_seq_length", help="Maximum sequence length of rule predictions (i.e., max # rules that can cover a single instance)", type=int, default=10)
     parser.add_argument("--no_cuda", action="store_true", help="Do not use CUDA")
     parser.add_argument("--lower_case", action="store_true", help="Use uncased model")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite dataset if exists")
@@ -258,47 +255,37 @@ def main():
     parser.add_argument("--fp16", action='store_true', help='whehter use fp16 or not')
     parser.add_argument("--sample_size", nargs="?", type=int, default=16384, help="number of unlabeled samples for evaluating uncetainty on in each self-training iteration")
     parser.add_argument("--seed", type=int, default=42, help="random seed for initialization")
-    parser.add_argument(
-        "--fp16_opt_level",
-        type=str,
-        default="O1",
-        help="For fp16: Apex AMP optimization level selected in ['O0', 'O1', 'O2', and 'O3']."
-             "See details at https://nvidia.github.io/apex/amp.html",
-    )
     
     args = parser.parse_args()
-    if args.seed == 0:
-        args.dataset_type = 'original'
     np.random.seed(args.seed)
     
     # Define dataset-specific parameters
     if args.dataset in ['sms']:
         args.num_labels = 2
         args.metric = 'weighted_f1'
-        args.max_seq_length = 64
         args.oversample = 3
     elif args.dataset in ['youtube']:
         args.num_labels = 2
         args.metric = 'weighted_acc'
-        args.max_seq_length = 64
         args.oversample = 3
     elif args.dataset == 'trec':
         args.num_labels = 6
         args.metric = 'weighted_acc'
-        args.max_seq_length = 64
         args.oversample = 10
     elif args.dataset == 'census':
         args.num_labels = 2
         args.metric = 'weighted_acc'
-        args.max_seq_length = 64
         args.train_batch_size = 128
         args.oversample = 5
+        # CENSUS is the only dataset where more than 10 rules may cover a single instance
+        args.max_rule_seq_length = 15
     elif args.dataset == 'mitr':
         args.num_labels = 9
         args.metric = 'weighted_f1'
         args.oversample = 2
         args.max_seq_length = 32
         args.train_batch_size = 256
+        args.unsup_batch_size = 128
     elif args.dataset in ['spouse']:
         args.num_labels = 2
         args.metric = 'f1'
@@ -311,7 +298,6 @@ def main():
     now = datetime.now()
     date_time = now.strftime("%Y_%m_%d-%H_%M")
 
-    
     args.experiment_folder = os.path.join(args.experiment_folder, args.dataset)
     args.logdir = os.path.join(args.experiment_folder, args.logdir)
     
@@ -349,7 +335,7 @@ def main():
     args.eval_batch_size = args.train_batch_size * max(1, args.n_gpu)
 
     logger.info("\n\n\t\t *** NEW EXPERIMENT ***\nargs={}".format(args))
-    wst(args, logger=logger)
+    astra(args, logger=logger)
     close(logger)
 
 

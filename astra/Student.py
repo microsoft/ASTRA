@@ -1,22 +1,15 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
-import argparse
-import json
-import logging
 import os
-import random
-import numpy as np
-import torch
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
-from tqdm.auto import tqdm, trange
-from model import LogRegTrainer, BertTFTrainer, PreprocessedModelTrainer 
+from model import LogRegTrainer, BertTrainer, DefaultModelTrainer
 
 preprocessed_dataset_list = ['trec', 'youtube', 'sms', 'census', 'mitr']
 supported_trainers = {
     'logreg': LogRegTrainer,
-    'berttf': BertTFTrainer,
+    'bert': BertTrainer,
 }
 
 class Student:
@@ -27,13 +20,13 @@ class Student:
         assert self.name in supported_trainers, "Student not supported: <{}>".format(self.name)
         self.trainer_class = supported_trainers[self.name]
         if args.dataset in preprocessed_dataset_list:
-            self.trainer = PreprocessedModelTrainer(args=self.args, logger=self.logger)
+            self.trainer = DefaultModelTrainer(args=self.args, logger=self.logger)
         else:
             self.trainer = self.trainer_class(args=self.args, logger=self.logger)
         self.preprocess = self.trainer.preprocess
 
-    def train(self, train_dataset, dev_dataset, train_label_name='label', dev_label_name='label', eval_fn=None):
-        # Training student on a few labeled data
+    def train(self, train_dataset, dev_dataset, train_label_name='label', dev_label_name='label'):
+        # Training student for the first time on few labeled data (First iteration of self-training)
         res = self.trainer.train(
             train_texts=train_dataset.data['texts'],
             preprocessed_train_texts=train_dataset.data.get('preprocessed_texts'),
@@ -45,7 +38,8 @@ class Student:
         return res
 
     def train_pseudo(self, train_dataset, dev_dataset, train_label_name='label', train_weight_name='weights',
-                     dev_label_name='label', eval_fn=None):
+                     dev_label_name='label'):
+        # Fine-tuning student on pseudo-labeled data (provided by the Teacher)
         # Call different function for student model with different hyperparameters: weighted training.
         # Note: if train_weight_name is None, then weights are not used
         res = self.trainer.train_pseudo(
@@ -59,14 +53,14 @@ class Student:
         )
         return res
 
-    def finetune(self, train_dataset, dev_dataset, train_label_name='label', train_weight_name='weights',
-                     dev_label_name='label', eval_fn=None):
-        # Call different function for fine-tuning with a few labeled data
+    def finetune(self, train_dataset, dev_dataset, train_label_name='label', dev_label_name='label'):
+        # Fine-tuning student on few labeled data
+        # Note: this function is different than train() because of potentially different hyperparameters.
+        #       If all hyperparameters are same, you can merge both train() and finetune() into one.  
         res = self.trainer.finetune(
             train_texts=train_dataset.data['texts'],
             preprocessed_train_texts=train_dataset.data.get('preprocessed_texts'),
             train_labels=train_dataset.data[train_label_name],
-            # train_weights=train_dataset.data.get(train_weight_name),
             dev_texts=dev_dataset.data['texts'],
             preprocessed_dev_texts=dev_dataset.data.get('preprocessed_texts'),
             dev_labels=dev_dataset.data[dev_label_name],

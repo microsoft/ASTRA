@@ -1,6 +1,8 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
+
 import os
 import re
 import pandas as pd
@@ -11,7 +13,7 @@ import multiprocessing as mp
 from functools import partial
 from nltk.corpus import stopwords
 
-# Tokenizer class used for Logistic Regression classifier. 
+# Tokenizer class used only for the Logistic Regression classifier.
 
 def identity_fn(doc):
     return doc
@@ -140,9 +142,6 @@ class Tokenizer:
 
         return [token.text for token in tokens]
 
-
-    #def spacy_tokenize(self, text):
-    #    return test_clean_str(text.strip(), self.language).split()
     def clean_tokenize(self, text):
         text = text.strip()
         text = text.lower()

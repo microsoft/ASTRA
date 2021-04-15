@@ -1,46 +1,31 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
+import os
+import math
 import random
 import numpy as np
-from collections import defaultdict
 from numpy.random import seed
-from tensorflow.keras.preprocessing import sequence
-from string import punctuation
-from tensorflow.python.client import device_lib
-import os
-from tqdm import tqdm
-import sys
-import re
-import math
-from tensorflow.keras import backend as kb
-from tensorflow.keras import optimizers
-from tensorflow.keras.models import load_model
 import tensorflow.keras as K
 import tensorflow as tf
-from sklearn.utils import shuffle
-from tensorflow.keras.utils import multi_gpu_model, to_categorical
-from tensorflow.keras.losses import CategoricalCrossentropy, MeanSquaredError
-from bert import bert_tokenization
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.layers import Embedding, Input, Dropout, Dense, Lambda
+from tensorflow.keras.models import Model
 from scipy.special import softmax
-import time
-import random
-from tensorflow.keras.initializers import RandomUniform
-from tensorflow.keras.layers import Embedding, Input, LSTM, Bidirectional, TimeDistributed, Dropout, Dense, Conv1D, \
-    Lambda, Concatenate, \
-    RepeatVector, Activation, Flatten, Permute, Add, concatenate, MaxPooling1D, GlobalMaxPooling1D
-from numpy.random import seed
-from tensorflow.keras.regularizers import l1, l2
-from tensorflow.keras.utils import multi_gpu_model
-from transformers import BertTokenizer, TFBertModel, BertConfig
-import tensorflow_hub as hub
+from bert import bert_tokenization
+import bert
+from bert.loader import load_stock_weights
 
-# Trainer that considers pre-trained contextualized embeddings.
 
-class PreprocessedModelTrainer:
-    # Trainer Class
-    # has to implement: __init__, train, evaluate, save, load
+class DefaultModelTrainer:
+    """
+    Student Trainer based on default model architectures for equal comparison with previous approaches
+    The Trainer considers pre-computed contextualized embeddings that are already provided with previous benchmarks
+    It has to implement: __init__, train, evaluate, save, load
+    """
+
     def __init__(self, args, logger=None):
         self.args = args
         self.dataset = args.dataset
@@ -58,7 +43,6 @@ class PreprocessedModelTrainer:
         self.sup_batch_size = args.train_batch_size
         self.sup_epochs = args.num_epochs
         self.unsup_epochs = args.num_unsup_epochs
-        self.T = args.T
         self.num_labels = args.num_labels
         self.model = None
         self.gpus = None
@@ -207,12 +191,6 @@ class PreprocessedModelTrainer:
             if counter == 0:
                 print(strong_model.summary())
 
-            if False: #self.args.supervised == True:
-                class_weight = {0: 1, 1: 10}
-                print("Setting class weights: {}".format(class_weight))
-            else:
-                class_weight = None
-
             print("training supervised model {}/{}".format(counter, N_base))
             strong_model.fit(
                 x=[x_train, np.zeros((len(x_train), self.max_seq_length))],
@@ -225,8 +203,7 @@ class PreprocessedModelTrainer:
                                                    total_epoch_count=self.sup_epochs),
                     K.callbacks.EarlyStopping(patience=20, restore_best_weights=True)
                 ],
-                validation_data=([x_dev, np.zeros((len(x_dev), self.max_seq_length))], y_dev),
-                class_weight=class_weight)
+                validation_data=([x_dev, np.zeros((len(x_dev), self.max_seq_length))], y_dev))
 
             val_loss = strong_model.evaluate([x_dev, np.zeros((len(x_dev), self.max_seq_length))], y_dev)
             print("Validation loss for run {} : {}".format(counter, val_loss))
@@ -264,20 +241,6 @@ class PreprocessedModelTrainer:
             'features': features.numpy()
         }
 
-    def get_mc_dropout_samples(self, texts, preprocessed_texts=None):
-        x_ids = np.array(self.preprocess(texts, preprocessed_texts))
-        y_mean, y_var, y_pred, acc, y_T = mc_dropout_evaluate(
-            model=self.model,
-            gpus=self.gpus,
-            classes=self.num_labels,
-            x=x_ids,
-            y=None,
-            T=self.T,
-            batch_size=256,
-            training=True
-        )
-        return y_mean, y_var, y_pred, acc, y_T
-
     def load(self, savefolder):
         self.logger.info("loading student from {}".format(savefolder))
         raise (BaseException('not implemented'))
@@ -306,30 +269,8 @@ def create_learning_rate_scheduler(max_learn_rate=5e-5,
 
     return learning_rate_scheduler
 
-
-def gelu(x):
-    """Gaussian Error Linear Unit.
-
-    This is a smoother version of the RELU.
-    Original paper: https://arxiv.org/abs/1606.08415
-    Args:
-      x: float Tensor to perform activation.
-
-    Returns:
-      `x` with the GELU activation applied.
-    """
-    cdf = 0.5 * (1.0 + tf.tanh(
-        (np.sqrt(2 / np.pi) * (x + 0.044715 * tf.pow(x, 3)))))
-    return x * cdf
-
-
-def get_H_t(X, timestep):
-    ans = X[:, timestep, :]  # get first element from time dim
-    return ans
-
-
-def construct_model(max_seq_length, num_labels, dense_dropout=0.5, attention_dropout=0.3,
-                    hidden_dropout=0.3, dataset='trec'):
+def construct_model(max_seq_length, num_labels, dense_dropout=0.5, dataset='trec'):
+    # Constructing default model architectures for equal comparison with previous approaches
     if dataset == 'trec':
         emb_size = 1024
         hidden_size = 512

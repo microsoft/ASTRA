@@ -1,25 +1,11 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
-import argparse
-import json
-import logging
 import os
-from os.path import expanduser
-home = expanduser("~")
 import numpy as np
 import random
-import shutil
-import torch
-from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
-import joblib
-from Logger import get_logger, close
-from DataHandler import DataHandler
-from Evaluator import Evaluator
-from datetime import datetime
-import multiprocessing as mp
-from functools import partial
 from weaksource import SMSRules, TRECRules, YoutubeRules, CENSUSRules, MITRRules, SPOUSERules
 from RuleAttentionNetwork import RAN
 
@@ -33,11 +19,16 @@ supported_weak_sources = {
 }
 
 class Teacher:
+    """
+    Teacher:
+        (1) considers multiple weak sources (1) multiple weak (heuristic) rules, (2) Student
+        (2) aggregates weak sources with an aggregation model (e.g., RAN) to compute a single pseudo-label
+    """
+
     def __init__(self, args, logger=None):
-        # Teacher: considers multiple weak sources where each source consists of one or more weak rules.
         self.name = args.teacher_name
         self.datapath = args.datapath
-        if self.name not in ["ran_ssl"]:
+        if self.name != "ran":
             raise (BaseException("Teacher not supported: {}".format(self.name)))
         if args.weak_sources is None:
             if args.dataset in ['sms', 'trec', 'youtube', 'census', 'mitr', 'spouse']:
@@ -58,20 +49,11 @@ class Teacher:
             assert source_name in supported_weak_sources, "Weak Source not supported: {}".format(source_name)
         self.weak_sources = {src: supported_weak_sources[src](self.datapath) for src in self.source_names}
         self.num_rules = np.sum([src.num_rules for _, src in self.weak_sources.items()])
-        self.rule_perc = args.rule_perc
-        if self.rule_perc < 1.0:
-            self.num_rules = int(self.rule_perc * self.num_rules)
         self.preprocess_fns = [src.preprocess for src_name, src in self.weak_sources.items()]
-        self.use_student_as_rule = True
-        self.args.use_student_as_rule = self.use_student_as_rule 
+        self.preprocess = None if None in self.preprocess_fns else self.preprocess_all
 
-        if None in self.preprocess_fns:
-            self.preprocess = None
-        else:
-            self.preprocess = self.preprocess_all        
         self.agg_model = RAN(args=self.args, num_rules=self.num_rules, logger=self.logger, name=self.name)
         self.name = 'ran'
-        self.use_gt_as_lf = False
         self.student = None
         self.convert_abstain_to_random = args.convert_abstain_to_random
 
@@ -85,11 +67,13 @@ class Teacher:
         return all_preds[0]
 
     def apply(self, dataset):
+        # Apply Teacher on unlabeled data
         all_preds = []
         for src_name, weak_src in self.weak_sources.items():
             # Each source is a set of rules.
             num_rules = weak_src.num_rules
             self.logger.info("Applying Teacher with {} LF(s) on {} data".format(num_rules, len(dataset)))
+
             # preds: num_examples x num_rules
             preds = weak_src.apply(dataset)
             preds = np.array(preds).astype(int)
@@ -98,7 +82,7 @@ class Teacher:
                 preds = preds[..., np.newaxis]
             all_preds.append(preds)
 
-        # all_preds: num_examples x num_all_rules
+        # all_preds: num_examples x num_rules
         all_preds = np.hstack(all_preds)
         return all_preds
 
@@ -122,12 +106,12 @@ class Teacher:
     def predict_ran(self, dataset):
         rule_pred = self.apply(dataset)
         student_pred_dict = self.student.predict(dataset=dataset)
-        student_pred_proba = student_pred_dict['proba'] if self.use_student_as_rule else None
+        student_pred_proba = student_pred_dict['proba']
         res = self.aggregate_sources(rule_pred,
                                      student_features=student_pred_dict['features'],
                                      student_pred=student_pred_proba,
                                      train=False)
-        self.logger.info("First 10 teacher proba:\n{}".format(res['proba'][:10]))
+        # self.logger.info("First 10 teacher proba:\n{}".format(res['proba'][:10]))
         if dataset.method in ['test', 'dev'] and self.convert_abstain_to_random:
             labels = [x if x != -1 else np.random.choice(np.arange(self.num_labels), 1)[0] for x in res['preds'].tolist()]
             res['preds'] = np.array(labels)
@@ -155,7 +139,6 @@ class Teacher:
             y_dev=dev_dataset.data[dev_label_name],
             x_unsup=unsup_student_features,
             rule_pred_unsup=rule_pred_unsup,
-            eval_fn=None
         )
         return {}
 
@@ -172,13 +155,6 @@ class Teacher:
         student_pred_dev = self.student.predict(dataset=dev_dataset) if dev_dataset is not None else {'features': None, 'proba': None}
         student_pred_unsup = self.student.predict(dataset=unlabeled_dataset) if unlabeled_dataset is not None else {'features': None, 'proba': None}
 
-        if not self.use_student_as_rule:
-            student_pred_train['proba'] = None
-            student_pred_dev['proba'] = None
-            student_pred_unsup['proba'] = None
-
-        exemplar_labels = train_dataset.data.get('exemplar_labels') if train_dataset is not None else None
-
         self.logger.info("Training Rule Attention Network")
         self.agg_model.train(
             x_train=student_pred_train['features'],
@@ -192,8 +168,6 @@ class Teacher:
             x_unsup=student_pred_unsup['features'],
             rule_pred_unsup=rule_pred_unsup,
             student_pred_unsup=student_pred_unsup['proba'],
-            eval_fn=None,
-            exemplar_labels=exemplar_labels
         )
         return {}
 

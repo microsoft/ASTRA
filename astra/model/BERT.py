@@ -1,49 +1,29 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
 import os
-import sys
-import re
 import math
 import random
-import logging
 import numpy as np
-from collections import defaultdict
 from numpy.random import seed
-from tensorflow.keras.preprocessing import sequence
-from string import punctuation
-from tensorflow.python.client import device_lib
-from tensorflow.keras import backend as kb
-from tensorflow.keras import optimizers
-from tensorflow.keras.models import load_model
 import tensorflow.keras as K
 import tensorflow as tf
-from sklearn.utils import shuffle
-from tensorflow.keras.utils import multi_gpu_model, to_categorical
-from tensorflow.keras.losses import CategoricalCrossentropy, MeanSquaredError
-from bert import bert_tokenization
-from scipy.special import softmax
-import time
-from tensorflow.keras.initializers import RandomUniform
-from tensorflow.keras.layers import Embedding, Input, LSTM, Bidirectional, TimeDistributed, Dropout, Dense, Conv1D, \
-    Lambda, Concatenate, \
-    RepeatVector, Activation, Flatten, Permute, Add, concatenate, MaxPooling1D, GlobalMaxPooling1D
+from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.layers import Embedding, Input, Dropout, Dense, Lambda
 from tensorflow.keras.models import Model
-from numpy.random import seed
-from tensorflow.keras.regularizers import l1, l2
-from tensorflow.keras.utils import multi_gpu_model
-from bert.loader import StockBertConfig, map_stock_config_to_params, load_stock_weights
-from bert import BertModelLayer
+from scipy.special import softmax
+from bert import bert_tokenization
 import bert
-import os
+from bert.loader import load_stock_weights
 
-class BertTFTrainer:
+class BertTrainer:
     # Trainer Class
     # has to implement: __init__, train, evaluate, save, load
     def __init__(self, args, logger=None):
         self.args = args
-        self.name = 'bertTF'
+        self.name = 'BERT'
         self.logger = logger
         self.manual_seed = args.seed
         self.max_seq_length = args.max_seq_length

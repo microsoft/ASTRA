@@ -1,5 +1,6 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
 import pandas as pd
@@ -11,27 +12,19 @@ import joblib
 from copy import deepcopy
 import shutil
 
-orig_datapath="<PUT DATA PATH>"
 
 class PreprocessedDataset:
     # Load pre-processed dataset as used in https://github.com/awasthiabhijeet/Learning-From-Rules
-    # And adapt to support more datasets. 
-    def __init__(self, datapath=orig_datapath, orig_train=True, dataset='trec', seed=42, dtype='original', rule_perc=1.0):
+    def __init__(self, datapath="../../data", orig_train=True, dataset='trec', seed=42):
         self.dataset = dataset
         self.seed = seed
         self.basedatafolder = os.path.join(datapath, 'docs/{}/'.format(self.dataset.upper()))
-        self.type = dtype 
-        self.rule_perc = rule_perc 
-        if self.type == 'original':
-            self.datafolder = os.path.join(self.basedatafolder, 'preprocessed/')
-        elif self.type == 'train_valid_split':
-            self.datafolder = os.path.join(self.basedatafolder, 'preprocessed_train_valid_split/seed{}/preprocessed/'.format(seed))
-        else:
-            raise(BaseException('unknown dataset type: {}'.format(self.type)))
+        self.datafolder = os.path.join(self.basedatafolder, 'preprocessed_datasets/seed{}/preprocessed/'.format(seed))
         self.language = 'english'
         self.orig_train = orig_train
         self.label2ind = self.get_label2ind()
         self.num_labels = len(self.label2ind)
+        # self.lf_names = ["rule_{}".format(i+1) for i in range(15)]
         self.lf_names = None
 
     def get_label2ind(self):
@@ -43,8 +36,6 @@ class PreprocessedDataset:
             return {"ham": 0, "spam": 1}
         elif self.dataset == 'census':
             return {"low": 0, "high": 1}
-        elif self.dataset == 'spouse':
-            return {"neg": 0, "pos": 1}
         elif self.dataset == 'mitr':
             return {'O': 0,
                           'Location': 1,
@@ -78,15 +69,14 @@ class PreprocessedDataset:
 
     def preprocess(self):
         seed = self.seed
-        if self.type == 'original':
-            datafolder = self.basedatafolder
-            savefolder = self.datafolder
-        elif self.type == 'train_valid_split':  
-            self.train_valid_split()
-            datafolder = os.path.join(self.basedatafolder, 'preprocessed_train_valid_split/seed{}/p'.format(seed))
-            savefolder = os.path.join(self.basedatafolder, 'preprocessed_train_valid_split/seed{}/preprocessed/'.format(seed))
+        self.train_valid_split()
+        datafolder = os.path.join(self.basedatafolder, 'preprocessed_datasets/seed{}/p'.format(seed))
+        savefolder = os.path.join(self.basedatafolder, 'preprocessed_datasets/seed{}/preprocessed/'.format(seed))
+        self.preprocess_fn(datafolder=datafolder, savefolder=savefolder)
 
     def preprocess_fn(self, datafolder, savefolder):
+        # Pre-process original documents
+        # NOTE: for training they use (?) a specific subset of the data, that of rules?
         os.makedirs(savefolder, exist_ok=True)
 
         print("\nunlabeled")
@@ -97,6 +87,7 @@ class PreprocessedDataset:
         joblib.dump(data.x, os.path.join(savefolder, 'unlabeled_x.pkl'))
         joblib.dump(data.L, os.path.join(savefolder, 'unlabeled_labels.pkl'))
         joblib.dump(data.l, os.path.join(savefolder, 'unlabeled_rule_preds.pkl'))
+
 
         print("\ntrain")
         data = load_data(os.path.join(datafolder, 'd_processed.p'))
@@ -128,9 +119,8 @@ class PreprocessedDataset:
         seed = self.seed
         np.random.seed(seed)
         datafolder = self.basedatafolder
-        savefolder = os.path.join(self.basedatafolder, 'preprocessed_train_valid_split/seed{}/p'.format(seed))
+        savefolder = os.path.join(self.basedatafolder, 'preprocessed_datasets/seed{}/p'.format(seed))
         os.makedirs(savefolder, exist_ok=True)
-
 
         print("\nunlabeled")
         unlabeled = load_data(os.path.join(datafolder, 'U_processed.p'))
@@ -169,6 +159,7 @@ class PreprocessedDataset:
         return
 
 
+
 # pre-processing code from https://github.com/awasthiabhijeet/Learning-From-Rules
 import pickle
 import numpy as np
@@ -179,18 +170,13 @@ f_d_U = 'f_d_U'
 test_w = 'test_w'
 
 train_modes = [f_d, f_d_U]
+
 F_d_U_Data = collections.namedtuple('GMMDataF_d_U', 'x l m L d r')
 
 
 def discard_r(data):
     r = np.zeros(data.r.shape)
     return F_d_U_Data(data.x, data.l, data.m, data.L, data.d, r)
-
-def filter_rules(data, rule_inds):
-    r = data.r[:, rule_inds]
-    l = data.l[:, rule_inds]
-    m = data.m[:, rule_inds]
-    return F_d_U_Data(data.x, l, m, data.L, data.d, r)
 
 def concatenate_data(d1, d2):
     x = np.vstack([d1.x, d2.x])
@@ -251,19 +237,3 @@ def dump_data(save_filename, data):
     pickle.dump(data.r, save_file)
     save_file.close()
 
-
-if __name__ == "__main__":
-    dataset_names = ['trec', 'sms', 'youtube', 'census', 'mitr', 'spouse'] 
-    for dataset_name in dataset_names:
-        print("\n\nPre-processing {}".format(dataset_name))
-        # Use original splits
-        dtype = 'original' 
-        dataset = PreprocessedDataset(dataset=dataset_name, dtype=dtype)
-        dataset.preprocess()
-
-        # create new train/valid/unsup split.
-        seeds = [20, 7, 1993, 128, 42]
-        dtype = 'train_valid_split'
-        for seed in seeds:
-            dataset = PreprocessedDataset(dataset=dataset_name, seed=seed, dtype=dtype)
-            dataset.preprocess()

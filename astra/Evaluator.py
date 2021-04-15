@@ -1,5 +1,6 @@
 """
-Code for self-training with weak rules.
+Code for self-training with weak supervision.
+Author: Giannis Karamanolakis (gkaraman@cs.columbia.edu)
 """
 
 import numpy as np
@@ -8,6 +9,7 @@ from collections import defaultdict
 implemented_metrics = ['acc', 'prec', 'rec', 'f1', 'weighted_acc', 'weighted_f1']
 
 class Evaluator:
+    # A class that implements all evaluation metrics and prints relevant statistics
     def __init__(self, args, logger=None):
         self.args = args
         self.logger = logger
