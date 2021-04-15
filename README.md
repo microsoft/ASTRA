@@ -2,6 +2,29 @@
 
 This repo holds the code for our weak supervision framework, ASTRA, described in our NAACL 2021 paper: "[Self-Training with Weak Supervision](https://www.microsoft.com/en-us/research/publication/leaving-no-valuable-knowledge-behind-weak-supervision-with-self-training-and-domain-specific-rules/)"
 
+## Overview of ASTRA
+
+ASTRA is a weak supervision framework for training deep neural networks by automatically generating weakly-labeled data. Our framework can be used for tasks where it is expensive to manually collect large-scale labeled training data. 
+
+ASTRA leverages domain-specific **rules**, a large amount of **unlabeled data**, and a small amount of **labeled data**  through a **teacher-student** architecture:
+
+![alt text](https://github.com/microsoft/ASTRA/blob/main/astra.jpg?raw=true)
+
+Main components:
+* **Weak Rules**: domain-specific rules, expressed as Python labeling functions. Weak supervision usually considers multiple rules that rely on heuristics (e.g., regular expressions) for annotating text instances with weak labels.
+*  **Student**: a base model (e.g., a BERT-based classifier) that provides pseudo-labels as in standard self-training. In contrast to heuristic rules that cover a subset of the instances, the student can predict pseudo-labels for all instances.
+* **RAN Teacher**: our Rule Attention Teacher Network that aggregates the predictions of multiple weak sources (rules and student) with instance-specific weights to compute a single pseudo-label for each instance. 
+
+The following table reports classification results over 6 benchmark datasets averaged over over multiple runs.
+
+Attempt | TREC | SMS | YouTube | CENSUS | MIT-R | Spouse 
+--- | --- | --- | --- |--- |--- |--- 
+Majority Voting | 60.9 | 48.4 | 82.2 | 80.1 | 40.9 | 44.2
+Snorkel | 65.3 | 94.7 | 93.5 | 79.1 | 75.6 | 49.2
+Classic Self-training | 71.1 | 95.1 | 92.5 | 78.6 | 72.3 | 51.4
+**ASTRA** | **80.3** | **95.3** | **95.3** | **83.1** | **76.1** | **62.3**
+
+Our [NAACL'21 paper](https://www.microsoft.com/en-us/research/publication/leaving-no-valuable-knowledge-behind-weak-supervision-with-self-training-and-domain-specific-rules/) describes our ASTRA framework and more experimental results in detail. 
 
 ## Installation
 
@@ -21,22 +44,20 @@ pip install -r requirements.txt
 We will soon add detailed instructions for downloading datasets and domain-specific rules as well as supporting custom datasets. 
 
 
-## ASTRA Framework
-
-ASTRA leverages domain-specific rules, a large amount of unlabeled data, and a small amount of labeled data via iterative self-training.
+## Running ASTRA 
 
 You can run ASTRA as: 
 ```
 cd astra
-python main.py --dataset <DATASET> --student_name <STUDENT_MODEL> --teacher_name <TEACHER_MODEL>
+python main.py --dataset <DATASET> --student_name <STUDENT> --teacher_name <TEACHER>
 ```
 
-Supported <STUDENT_MODEL> arguments: 
+Supported <STUDENT> models: 
 1. **logreg**: Bag-of-words Logistic Regression classifier
 2. **elmo**: ELMO-based classifier
 3. **bert**: BERT-based classifier
 
-Supported <TEACHER_MODEL> arguments: 
+Supported <TEACHER> models: 
 1. **ran**: our Rule Attention Network (RAN)
 
 We will soon add instructions for supporting custom student and teacher components. 
