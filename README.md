@@ -15,7 +15,7 @@ Main components:
 *  **Student**: a base model (e.g., a BERT-based classifier) that provides pseudo-labels as in standard self-training. In contrast to heuristic rules that cover a subset of the instances, the student can predict pseudo-labels for all instances.
 * **RAN Teacher**: our Rule Attention Teacher Network that aggregates the predictions of multiple weak sources (rules and student) with instance-specific weights to compute a single pseudo-label for each instance. 
 
-The following table reports classification results over 6 benchmark datasets averaged over over multiple runs.
+The following table reports classification results over 6 benchmark datasets averaged over multiple runs.
 
 Attempt | TREC | SMS | YouTube | CENSUS | MIT-R | Spouse 
 --- | --- | --- | --- |--- |--- |--- 
@@ -52,12 +52,12 @@ cd astra
 python main.py --dataset <DATASET> --student_name <STUDENT> --teacher_name <TEACHER>
 ```
 
-Supported <STUDENT> models: 
+Supported < STUDENT > models: 
 1. **logreg**: Bag-of-words Logistic Regression classifier
 2. **elmo**: ELMO-based classifier
 3. **bert**: BERT-based classifier
 
-Supported <TEACHER> models: 
+Supported < TEACHER > models: 
 1. **ran**: our Rule Attention Network (RAN)
 
 We will soon add instructions for supporting custom student and teacher components. 
