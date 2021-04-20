@@ -17,7 +17,7 @@ Main components:
 
 The following table reports classification results over 6 benchmark datasets averaged over multiple runs.
 
-Attempt | TREC | SMS | YouTube | CENSUS | MIT-R | Spouse 
+Method | TREC | SMS | YouTube | CENSUS | MIT-R | Spouse 
 --- | --- | --- | --- |--- |--- |--- 
 Majority Voting | 60.9 | 48.4 | 82.2 | 80.1 | 40.9 | 44.2
 Snorkel | 65.3 | 94.7 | 93.5 | 79.1 | 75.6 | 49.2
