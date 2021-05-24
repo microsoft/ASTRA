@@ -1,6 +1,7 @@
 # Self-Training with Weak Supervision
 
-This repo holds the code for our weak supervision framework, ASTRA, described in our NAACL 2021 paper: "[Self-Training with Weak Supervision](https://www.microsoft.com/en-us/research/publication/leaving-no-valuable-knowledge-behind-weak-supervision-with-self-training-and-domain-specific-rules/)"
+This repo holds the code for our weak supervision framework, ASTRA, described in our NAACL 2021 paper: "[Self-Training with Weak Supervision](https://www.microsoft.com/en-us/research/publication/leaving-no-valuable-knowledge-behind-weak-supervision-with-self-training-and-domain-specific-rules/)" 
+
 
 ## Overview of ASTRA
 
@@ -40,27 +41,44 @@ pip install -r requirements.txt
 ```
 
 ## Download Data
+For reproducibility, you can directly download our pre-processed data files (split into multiple unlabeled/train/dev sets): 
 
-We will soon add detailed instructions for downloading datasets and domain-specific rules as well as supporting custom datasets. 
+```
+cd data
+bash prepare_data.sh
+```
+
+The original datasets are available [here](https://github.com/awasthiabhijeet/Learning-From-Rules).
 
 
 ## Running ASTRA 
 
-You can run ASTRA as: 
+
+To replicate our NAACL '21 experiments, you can directly run our bash script:
+```
+cd scripts
+bash run_experiments.sh
+```
+The above script will run ASTRA and report results under a new "experiments" folder. 
+
+You can alternatively run ASTRA with custom arguments as: 
 ```
 cd astra
 python main.py --dataset <DATASET> --student_name <STUDENT> --teacher_name <TEACHER>
 ```
 
-Supported < STUDENT > models: 
+Supported STUDENT models: 
 1. **logreg**: Bag-of-words Logistic Regression classifier
 2. **elmo**: ELMO-based classifier
 3. **bert**: BERT-based classifier
 
-Supported < TEACHER > models: 
+Supported TEACHER models: 
 1. **ran**: our Rule Attention Network (RAN)
 
-We will soon add instructions for supporting custom student and teacher components. 
+We will soon add instructions for supporting custom datasets as well as student and teacher components. 
+
+
+
 
 ## Citation 
 
