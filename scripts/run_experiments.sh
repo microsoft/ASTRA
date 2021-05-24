@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # NAACL 2021 Experiments
+baselogdir="$(date +'%h%d_%H-%M')_NAACL_experiments"
 
 # TREC
 for seed in 0 20 7 1993 128 42; do
