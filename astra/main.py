@@ -9,6 +9,7 @@ import logging
 import os
 import glob
 from os.path import expanduser
+from pathlib import Path
 import numpy as np
 import random
 import shutil
@@ -22,7 +23,8 @@ from Evaluator import Evaluator
 from datetime import datetime
 from copy import deepcopy
 from collections import defaultdict
-from utils import to_one_hot, evaluate_ran, analyze_rule_attention_scores, evaluate, evaluate_test, save_and_report_results
+from utils import to_one_hot, evaluate_ran, analyze_rule_attention_scores, evaluate, evaluate_test
+from utils import save_and_report_results, summarize_results
 home = expanduser("~")
 
 
@@ -300,25 +302,16 @@ def main():
 
     args.experiment_folder = os.path.join(args.experiment_folder, args.dataset)
     args.logdir = os.path.join(args.experiment_folder, args.logdir)
-    
+    experiment_dir = str(Path(args.logdir).parent.absolute())
+
+
+    if os.path.exists(args.logdir):
+        shutil.rmtree(args.logdir)
+
     if args.debug:
         args.logdir = os.path.join(args.experiment_folder, 'debug')
-        if os.path.exists(args.logdir):
-            shutil.rmtree(args.logdir)
     else:
-        args.logdir = args.logdir + "/" + date_time
-        if args.student_name == 'logreg':
-            args.logdir += "_st{}".format(args.student_name.upper())
-        else:
-            args.logdir += "_{}".format(args.dataset) + \
-            "_st{}".format(args.student_name.upper()) + \
-            "_epoch{}".format(args.num_epochs) + \
-            "_lr{}".format(args.learning_rate) + \
-            "_batch{}".format(args.train_batch_size) + \
-            "_maxseq{}".format(args.max_seq_length)
-
-        if int(args.downsample) != 1:
-            args.logdir += "_downsample{}".format(args.downsample)
+        args.logdir = args.logdir + "/" + date_time + "_st{}".format(args.student_name.upper())
 
     os.makedirs(args.logdir, exist_ok=True)
     logger = get_logger(logfile=os.path.join(args.logdir, 'log.log'))
@@ -338,6 +331,9 @@ def main():
     astra(args, logger=logger)
     close(logger)
 
+    # summarize results for all seeds
+    all_results = summarize_results(experiment_dir, args.dataset)
+    print("\nResults summary (metric={}): {}".format(args.metric, all_results))
 
 if __name__ == "__main__":
     main()

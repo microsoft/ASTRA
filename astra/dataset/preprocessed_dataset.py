@@ -12,14 +12,15 @@ import joblib
 from copy import deepcopy
 import shutil
 
+# PreprocessedDataset is used for loading exactly the same dataset splits and features as in our experiments
 
 class PreprocessedDataset:
     # Load pre-processed dataset as used in https://github.com/awasthiabhijeet/Learning-From-Rules
     def __init__(self, datapath="../../data", orig_train=True, dataset='trec', seed=42):
         self.dataset = dataset
         self.seed = seed
-        self.basedatafolder = os.path.join(datapath, 'docs/{}/'.format(self.dataset.upper()))
-        self.datafolder = os.path.join(self.basedatafolder, 'preprocessed_datasets/seed{}/preprocessed/'.format(seed))
+        self.basedatafolder = os.path.join(datapath, self.dataset.upper())
+        self.datafolder = os.path.join(self.basedatafolder, 'seed{}/'.format(seed))
         self.language = 'english'
         self.orig_train = orig_train
         self.label2ind = self.get_label2ind()
@@ -70,13 +71,19 @@ class PreprocessedDataset:
     def preprocess(self):
         seed = self.seed
         self.train_valid_split()
-        datafolder = os.path.join(self.basedatafolder, 'preprocessed_datasets/seed{}/p'.format(seed))
+        datafolder = os.path.join(self.basedatafolder, 'original_data'.format(seed))
+        if not os.path.exists(datafolder):
+            raise(BaseException('You need to download the original dataset for pre-processing, otherwise use our splits'))
         savefolder = os.path.join(self.basedatafolder, 'preprocessed_datasets/seed{}/preprocessed/'.format(seed))
         self.preprocess_fn(datafolder=datafolder, savefolder=savefolder)
 
     def preprocess_fn(self, datafolder, savefolder):
-        # Pre-process original documents
-        # NOTE: for training they use (?) a specific subset of the data, that of rules?
+        # Our function used for pre-processing the original datasets and saving them into different splits (for robustness)
+        # Original datasets can be found here: https://github.com/awasthiabhijeet/Learning-From-Rules
+        # You can alternatively download the pre-processed versions used in our experiments
+        # seed0 contains the original dataset. seed<i> (i=1..5) contains 5 random splits of the unlabeled/train/dev data
+        # All splits consider the same test set, for a fair comparison to previous approaches.
+
         os.makedirs(savefolder, exist_ok=True)
 
         print("\nunlabeled")
