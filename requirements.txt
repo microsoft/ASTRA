@@ -1,7 +1,7 @@
 #python3.6
 numpy==1.19.0
 torch==1.5.1
-tensorflow==2.1.0
+tensorflow==2.6.4
 pandas==0.25.3
 bert-for-tf2==0.13.5
 transformers==2.11.0
