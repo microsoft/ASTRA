@@ -1,5 +1,5 @@
 #python3.6
-numpy==1.19.0
+numpy==1.22.0
 torch==1.5.1
 tensorflow==2.1.0
 pandas==0.25.3
